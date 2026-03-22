@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+*.pkl
+*.pickle
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+ENV/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Local runtime artifacts
+Flask Deployed App/history.db
+Plant-Disease-Detection/history.db
+
+# Uploaded/generated images (keep the placeholder Readme)
+Flask Deployed App/static/uploads/*
+!Flask Deployed App/static/uploads/Readme.md
+
+# Model weights (too large for GitHub; use Git LFS if needed)
+*.pt
+*.pth

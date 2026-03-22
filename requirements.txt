@@ -1,0 +1,16 @@
+# Core app dependencies
+flask
+werkzeug
+pillow
+numpy
+pandas
+
+# ML dependencies
+torch
+torchvision
+
+# Reporting
+reportlab
+
+# Optional (deployment)
+gunicorn

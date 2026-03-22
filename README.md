@@ -12,6 +12,23 @@
 * Run the Flask app using below command `python3 app.py`
 * You can also use downloaded file in `Model` Section and play with it using Jupyter Notebook.
 
+## ⭐Train with PlantVillage dataset (local)
+This repo expects the PlantVillage **39-class** dataset in a folder with **39 subfolders** (one per class).
+
+1. Download PlantVillage (dataset link is also in the blog / Model markdown).
+2. Extract it so your dataset folder looks like:
+    - `Dataset/Apple___Apple_scab/...images...`
+    - `Dataset/Tomato___healthy/...images...`
+    - (total 39 class folders)
+
+Then run training from the repo root:
+
+`python Model/train_plantvillage.py --data Dataset --epochs 10 --output "Flask Deployed App/plant_disease_model_1_latest.pt"`
+
+This will create:
+- `Flask Deployed App/plant_disease_model_1_latest.pt` (weights used by the Flask app)
+- `Flask Deployed App/plant_disease_model_1_latest.pt.meta.json` (optional metrics/metadata shown in UI)
+
 ## ⭐Contribution ( Open Source )
 * This Project is now open source.
 * All the developers who are intrested they can contribute in this project.

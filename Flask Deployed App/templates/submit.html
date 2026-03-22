@@ -10,13 +10,82 @@
     <div class="row mb-5 text-center text-white">
       <div class="col-lg-10 mx-auto">
         <h1 class="display-4" style="padding-top: 2%;font-weight: 400;color: rgb(4, 54, 4);""><b>{{title}}🍂</b></h1>
+
+        {% if realtime %}
+        <div class="d-flex justify-content-center" style="margin-top: 0.75rem;">
+          <div class="p-4 bg-white shadow rounded-lg" style="min-width: 320px; max-width: 680px; width: 100%;">
+            <div class="d-flex justify-content-between align-items-start" style="gap: 1rem;">
+              <div style="text-align: left;">
+                <div style="font-size: 1.05rem; font-weight: 700; color: #05380b;">
+                  <span id="wx-place">{% if realtime.place %}{{ realtime.place }}{% else %}Your location{% endif %}</span>
+                </div>
+                <div class="text-muted" style="font-size: 0.95rem; margin-top: 0.15rem;">
+                  <span id="wx-condition">{% if realtime.condition %}{{ realtime.condition }}{% else %}Weather{% endif %}</span>
+                  · <span id="wx-provider">{{ realtime.provider }}</span>
+                  {% if realtime.time %}
+                  · <span id="wx-time">{{ realtime.time }}</span>
+                  {% else %}
+                  · <span id="wx-time">--</span>
+                  {% endif %}
+                </div>
+
+                <div style="margin-top: 0.75rem;">
+                  <span class="badge bg-success" style="padding: 0.55rem 0.75rem; font-size: 0.9rem;">Humidity</span>
+                  <span class="badge bg-light text-dark" id="wx-humidity" style="padding: 0.55rem 0.75rem; font-size: 0.9rem; border: 1px solid rgba(0,0,0,0.08);">--%</span>
+                  <span class="badge bg-success" style="padding: 0.55rem 0.75rem; font-size: 0.9rem; margin-left: 0.5rem;">Wind</span>
+                  <span class="badge bg-light text-dark" id="wx-wind" style="padding: 0.55rem 0.75rem; font-size: 0.9rem; border: 1px solid rgba(0,0,0,0.08);">-- km/h</span>
+                  <span class="badge bg-success" style="padding: 0.55rem 0.75rem; font-size: 0.9rem; margin-left: 0.5rem;">Rain</span>
+                  <span class="badge bg-light text-dark" id="wx-rain" style="padding: 0.55rem 0.75rem; font-size: 0.9rem; border: 1px solid rgba(0,0,0,0.08);">-- mm</span>
+                </div>
+
+                <div class="text-muted" id="wx-status" style="font-size: 0.85rem; margin-top: 0.6rem;">
+                  Live weather updates enabled
+                </div>
+              </div>
+
+              <div style="text-align: right; min-width: 120px;">
+                <div style="font-size: 3.0rem; font-weight: 800; line-height: 1; color: #05380b;">
+                  <span id="wx-temp">--</span><span style="font-size: 1.25rem; font-weight: 700;">°C</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if pred_confidence_percent is not none %}
+        <p class="lead" style="font-weight: 600;color: black; margin-bottom: 0;">
+          Confidence: {{ '%.2f'|format(pred_confidence_percent) }}%
+          {% if pred_confidence_score is not none %}
+          (Score: {{ '%.4f'|format(pred_confidence_score) }})
+          {% endif %}
+        </p>
+        {% endif %}
+
+        {% if plant_name %}
+        <p class="lead" style="font-weight: 600;color: black; margin-bottom: 0;">
+          Plant: {{ plant_name }}
+        </p>
+        {% endif %}
+
+        {% if severity_level %}
+        <p class="lead" style="font-weight: 600;color: black; margin-bottom: 0;">
+          Severity: {{ severity_level }}{% if severity_percent is not none %} ({{ '%.2f'|format(severity_percent) }}% area){% endif %}
+        </p>
+        {% endif %}
+
+        {% if scan_id %}
+        <div style="margin-top: 0.75rem;">
+          <a class="btn btn-outline-success btn-sm" href="{{ url_for('download_report', scan_id=scan_id) }}">Download Report (PDF)</a>
+        </div>
+        {% endif %}
       </div>
     </div>
     <center>
     <div class=" col">
           <div class="p-3 bg-white shadow rounded-lg" style="width: 30%;">
 
-            <img src={{image_url}} width="350" height="350">
+            <img src="{{ uploaded_image_url|default(image_url, true) }}" width="350" height="350">
 
           </div>
       </div>
@@ -26,35 +95,202 @@
         <div class="col mx-auto">
           <div class="p-5 bg-white shadow rounded-lg" style="height: 95%;">
 
-            <h5><b>
-                {% if pred==3 or pred==5 or pred==7 or pred==11 or pred==15 or pred==18 or pred==20 or pred==23 or
-                pred==24 or pred==25 or pred==28 or pred==38 %}
-                Tips to Grow Healthy Plants :
-                {% else %}
-                Brief Descritpion :
-                {% endif %}
-              </b></h5>
-            <p>{{desc}}
-            </p>
+            {% if warnings and warnings|length > 0 %}
+            <div class="alert alert-warning" role="alert">
+              <b>Image quality note:</b>
+              <ul style="margin-bottom: 0;">
+                {% for w in warnings %}
+                <li>{{ w }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+
+            {% if top_predictions and top_predictions|length > 0 %}
+            <div class="p-3 bg-light rounded-lg" style="margin-bottom: 1rem;">
+              <h6 style="margin-bottom: 0.5rem;"><b>Top Predictions</b></h6>
+              <ol style="margin-bottom: 0;">
+                {% for p in top_predictions %}
+                <li>{{ p.name }} ({{ '%.2f'|format(p.confidence) }}%)</li>
+                {% endfor %}
+              </ol>
+
+              <div style="margin-top: 0.75rem;">
+                {% for p in top_predictions %}
+                <div style="margin-bottom: 0.5rem;">
+                  <div style="display:flex; justify-content: space-between;">
+                    <small><b>{{ p.name }}</b></small>
+                    <small>{{ '%.2f'|format(p.confidence) }}%</small>
+                  </div>
+                  <div class="progress" style="height: 10px;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ p.confidence }}%"></div>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
+            {% if batch_results and batch_results|length > 0 %}
+            <div class="p-3 bg-light rounded-lg" style="margin-bottom: 1rem;">
+              <h6 style="margin-bottom: 0.5rem;"><b>Batch Scan (additional images)</b></h6>
+              <div class="table-responsive">
+                <table class="table table-sm" style="margin-bottom: 0;">
+                  <thead>
+                    <tr>
+                      <th>Image</th>
+                      <th>Prediction</th>
+                      <th>Confidence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for r in batch_results %}
+                    <tr>
+                      <td><img src="{{ r.image_url }}" width="56" height="56" style="object-fit: cover; border-radius: 8px;"></td>
+                      <td>{{ r.pred_label }}</td>
+                      <td>{{ '%.2f'|format(r.confidence_percent) }}%</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {% endif %}
+
+            <h5><b>Description</b></h5>
+            <p style="white-space: pre-line;">{{desc}}</p>
+
+            {% if symptoms and symptoms|length > 0 %}
+            <h5 style="margin-top: 1rem;"><b>Symptoms</b></h5>
+            <ul style="margin-bottom: 0;">
+              {% for s in symptoms %}
+              <li>{{ s }}</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
           </div>
         </div>
       </div>
+
+      {% if cam_url %}
+      <div class="row" style="margin-top: 1rem;">
+        <div class="col mx-auto">
+          <div class="p-5 bg-white shadow rounded-lg">
+            <h5><b>Explanation Heatmap</b></h5>
+            <p class="text-muted" style="margin-bottom: 0.75rem;">Highlights regions that influenced the model's prediction (approximate).</p>
+            <center>
+              <img src="{{ cam_url }}" width="350" height="350">
+            </center>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if cams and cams|length > 1 %}
+      <div class="row" style="margin-top: 1rem;">
+        <div class="col mx-auto">
+          <div class="p-5 bg-white shadow rounded-lg">
+            <h5><b>Top-3 Explanations</b></h5>
+            <p class="text-muted" style="margin-bottom: 0.75rem;">Heatmaps for the top predictions.</p>
+            <div class="row">
+              {% for c in cams %}
+              <div class="col" style="min-width: 250px;">
+                <div class="p-3 bg-light rounded-lg" style="margin-bottom: 1rem;">
+                  <div style="margin-bottom: 0.5rem;"><b>#{{ c.rank }}</b> {{ c.label }}</div>
+                  <center>
+                    <img src="{{ c.url }}" width="224" height="224">
+                  </center>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
       <div class="row">
         <div class="col mx-auto">
           <div class="p-5 bg-white shadow rounded-lg" style="height:95%">
-            <h5><b>
-                {% if pred==3 or pred==5 or pred==7 or pred==11 or pred==15 or pred==18 or pred==20 or pred==23 or
-                pred==24 or pred==25 or pred==28 or pred==38 %}
-                Benefits :
-                {% else %}
-                Prevent This Plant Disease By follow below steps :
-                {% endif %}
-              </b></h5>
-            <p>
-              {{prevent}}
-            </p>
+            <h5><b>Recommended Treatment / Management</b></h5>
+            {% if treatment_steps and treatment_steps|length > 0 %}
+            <ul>
+              {% for t in treatment_steps %}
+              <li>{{ t }}</li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <p style="white-space: pre-line;">{{prevent}}</p>
+            {% endif %}
+
+            {% if smart_tips and smart_tips|length > 0 %}
+            <h5 style="margin-top: 1rem;"><b>Smart Tips (weather-aware)</b></h5>
+            <ul style="margin-bottom: 0;">
+              {% for tip in smart_tips %}
+              <li>{{ tip }}</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+
+            {% if prevention_tips and prevention_tips|length > 0 %}
+            <h5 style="margin-top: 1rem;"><b>Prevention Tips</b></h5>
+            <ul style="margin-bottom: 0;">
+              {% for tip in prevention_tips %}
+              <li>{{ tip }}</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
           </div>
         </div>
+
+        {% if scan_id and all_labels %}
+        <div class="col mx-auto">
+          <div class="p-5 bg-white shadow rounded-lg" style="height:95%">
+            <h5><b>Feedback</b></h5>
+            <p class="text-muted" style="margin-bottom: 0.75rem;">Help improve the model by confirming if the prediction is correct.</p>
+            <form action="{{ url_for('feedback_submit') }}" method="POST">
+              <input type="hidden" name="scan_id" value="{{ scan_id }}" />
+
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="correct" id="fb-yes" value="yes" checked>
+                <label class="form-check-label" for="fb-yes">Correct</label>
+              </div>
+              <div class="form-check" style="margin-top: 0.25rem;">
+                <input class="form-check-input" type="radio" name="correct" id="fb-no" value="no">
+                <label class="form-check-label" for="fb-no">Wrong</label>
+              </div>
+
+              <div id="fb-correct-label" style="margin-top: 0.75rem; display: none;">
+                <label for="correct_label"><b>Correct label</b></label>
+                <select class="form-select" name="correct_label" id="correct_label">
+                  <option value="">Select label</option>
+                  {% for lbl in all_labels %}
+                  <option value="{{ lbl }}">{{ lbl }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div style="margin-top: 0.9rem;">
+                <button type="submit" class="btn btn-success" style="background-color: #05380b;">Submit Feedback</button>
+              </div>
+            </form>
+
+            <script>
+              (function() {
+                const yes = document.getElementById('fb-yes');
+                const no = document.getElementById('fb-no');
+                const box = document.getElementById('fb-correct-label');
+                function sync() {
+                  if (!box) return;
+                  box.style.display = (no && no.checked) ? 'block' : 'none';
+                }
+                if (yes) yes.addEventListener('change', sync);
+                if (no) no.addEventListener('change', sync);
+                sync();
+              })();
+            </script>
+          </div>
+        </div>
+        {% endif %}
 
         {% if pred!=4 %}
         <div class="col mx-auto"">
@@ -81,7 +317,115 @@
       </div>
       {% endif %}
 
+      {% if model_meta %}
+      <div class="row" style="margin-top: 1rem;">
+        <div class="col mx-auto">
+          <div class="p-5 bg-white shadow rounded-lg">
+            <h5><b>Model Details</b></h5>
+            <ul style="margin-bottom: 0;">
+              <li><b>Dataset:</b> {{ model_meta.dataset }}</li>
+              <li><b>Model:</b> {{ model_meta.model }}</li>
+              <li><b>Device:</b> {{ model_meta.device }}</li>
+              {% if model_meta.weights %}
+              <li><b>Weights:</b> {{ model_meta.weights }}</li>
+              {% endif %}
+              {% if model_meta.weights_version %}
+              <li><b>Weights Version:</b> {{ model_meta.weights_version }}</li>
+              {% endif %}
+              <li><b>Accuracy:</b> {% if model_meta.accuracy %}{{ model_meta.accuracy }}{% else %}Not evaluated in this deployment{% endif %}</li>
+
+              {% if realtime %}
+              <li style="margin-top: 0.5rem;"><b>Real-time Weather ({{ realtime.provider }})</b></li>
+              {% if realtime.time %}<li><b>Time:</b> {{ realtime.time }}</li>{% endif %}
+              {% if realtime.temperature_c is not none %}<li><b>Temperature:</b> {{ realtime.temperature_c }} °C</li>{% endif %}
+              {% if realtime.humidity_percent is not none %}<li><b>Humidity:</b> {{ realtime.humidity_percent }}%</li>{% endif %}
+              {% if realtime.rain_mm is not none %}<li><b>Rain:</b> {{ realtime.rain_mm }} mm</li>{% endif %}
+              {% if realtime.precip_mm is not none %}<li><b>Precipitation:</b> {{ realtime.precip_mm }} mm</li>{% endif %}
+              {% if realtime.wind_kph is not none %}<li><b>Wind:</b> {{ realtime.wind_kph }} km/h</li>{% endif %}
+              {% endif %}
+            </ul>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
     </div>
   </div>
 </div>
+
+{% if realtime %}
+<script>
+  (function () {
+    // Initialize from server-provided data.
+    const rt = {{ realtime | tojson }};
+
+    const elTemp = document.getElementById('wx-temp');
+    const elTime = document.getElementById('wx-time');
+    const elPlace = document.getElementById('wx-place');
+    const elCondition = document.getElementById('wx-condition');
+    const elHumidity = document.getElementById('wx-humidity');
+    const elWind = document.getElementById('wx-wind');
+    const elRain = document.getElementById('wx-rain');
+    const elStatus = document.getElementById('wx-status');
+
+    function setText(el, text) {
+      if (!el) return;
+      el.textContent = text;
+    }
+
+    function applyWeather(data) {
+      if (!data) return;
+      if (data.place) setText(elPlace, String(data.place));
+      if (data.condition) setText(elCondition, String(data.condition));
+
+      if (data.temperature_c !== undefined && data.temperature_c !== null) {
+        const t = Number(data.temperature_c);
+        setText(elTemp, Number.isFinite(t) ? String(Math.round(t)) : String(data.temperature_c));
+      }
+      if (data.time) setText(elTime, String(data.time));
+
+      if (data.humidity_percent !== undefined && data.humidity_percent !== null) {
+        setText(elHumidity, `${data.humidity_percent}%`);
+      }
+      if (data.wind_kph !== undefined && data.wind_kph !== null) {
+        setText(elWind, `${data.wind_kph} km/h`);
+      }
+      // Prefer rain if available, else precipitation
+      if (data.rain_mm !== undefined && data.rain_mm !== null) {
+        setText(elRain, `${data.rain_mm} mm`);
+      } else if (data.precip_mm !== undefined && data.precip_mm !== null) {
+        setText(elRain, `${data.precip_mm} mm`);
+      }
+    }
+
+    applyWeather(rt);
+
+    const apiBase = {{ url_for('api_weather') | tojson }};
+
+    // Auto-refresh (dynamic like Google): call our backend so place/condition stays consistent.
+    if (!rt.lat || !rt.lon) {
+      setText(elStatus, 'Location not available for live weather');
+      return;
+    }
+
+    async function refresh() {
+      try {
+        setText(elStatus, 'Updating weather…');
+        const url = `${apiBase}?lat=${encodeURIComponent(rt.lat)}&lon=${encodeURIComponent(rt.lon)}`;
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const payload = await res.json();
+        applyWeather(payload);
+        setText(elStatus, 'Live weather updated');
+      } catch (e) {
+        setText(elStatus, 'Live weather unavailable');
+      }
+    }
+
+    // Refresh once shortly after render, then every 5 minutes.
+    setTimeout(refresh, 800);
+    setInterval(refresh, 5 * 60 * 1000);
+  })();
+</script>
+{% endif %}
 {% endblock body %}
