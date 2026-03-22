@@ -116,6 +116,36 @@ AI Engine
         );
     })();
 
+    // On some devices/networks, location may not be ready before the user clicks Submit.
+    // If lat/lon are still empty at submit time, try once more, then submit anyway.
+    (function ensureLocationOnSubmit() {
+        const form = document.querySelector('form[action="/submit"]');
+        const latEl = document.getElementById('lat');
+        const lonEl = document.getElementById('lon');
+        if (!form || !latEl || !lonEl) return;
+        if (!('geolocation' in navigator)) return;
+
+        let inFlight = false;
+        form.addEventListener('submit', function (e) {
+            if (latEl.value && lonEl.value) return;
+            if (inFlight) return;
+            inFlight = true;
+
+            e.preventDefault();
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    latEl.value = String(pos.coords.latitude);
+                    lonEl.value = String(pos.coords.longitude);
+                    form.submit();
+                },
+                () => {
+                    form.submit();
+                },
+                { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 }
+            );
+        });
+    })();
+
     const actualBtn = document.getElementById('actual-btn');
     const captureBtn = document.getElementById('capture-btn');
     const preview = document.getElementById('preview');
