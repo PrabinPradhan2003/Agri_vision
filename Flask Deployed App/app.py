@@ -565,8 +565,12 @@ def _load_model():
     # Common filenames referenced in this repo's READMEs
     candidates.extend(
         [
+            # 1) Next to the running Flask app (recommended for deployment)
             BASE_DIR / "plant_disease_model_1_latest.pt",
             BASE_DIR / "plant_disease_model_1.pt",
+            # 2) Also allow keeping weights under repo-root/Model
+            _REPO_ROOT / "Model" / "plant_disease_model_1_latest.pt",
+            _REPO_ROOT / "Model" / "plant_disease_model_1.pt",
         ]
     )
 
@@ -602,7 +606,7 @@ def _load_model():
         None,
         (
             "Model weights file not found. "
-            f"Download the pre-trained weights and place one of these files in '{BASE_DIR}': {expected}. "
+            f"Download the pre-trained weights and place one of these files in '{BASE_DIR}' or '{_REPO_ROOT / 'Model'}': {expected}. "
             "You can also set the env var PLANT_DISEASE_MODEL_PATH to an absolute path to the .pt file."
         ),
         None,
