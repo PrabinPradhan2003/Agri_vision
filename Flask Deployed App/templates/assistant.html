@@ -1,0 +1,183 @@
+{% extends 'base.html' %}
+{% block pagetitle %}
+Assistant
+{% endblock pagetitle %}
+
+{% block body %}
+<div>
+  <div class="container">
+    <div class="row mb-5 text-center text-white">
+      <div class="col-lg-10 mx-auto">
+        <h1 class="display-4" style="padding-top: 2%;font-weight: 400;color: rgb(4, 54, 4);"><b>🤖 Chatbot Assistant</b></h1>
+        <p class="lead" style="font-weight: 500;color: black; margin-bottom: 0;">Ask about treatment, fertilizer, and watering</p>
+        {% if latest_label %}
+        <p class="lead" style="font-weight: 500;color: black;">Latest scan: <b>{{ latest_label }}</b></p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-lg-8" style="margin-bottom: 1rem;">
+        <div class="p-4 bg-white shadow rounded-lg" style="height: 100%;">
+          <div class="d-flex justify-content-between align-items-start" style="gap: 1rem; margin-bottom: 0.75rem;">
+            <div>
+              <div style="font-weight: 700; color: #05380b;">Chat</div>
+              <div class="text-muted" style="font-size: 0.95rem;">
+                Ask: “How to treat this disease?”, “Best fertilizer for rice?”, “When should I water?”
+              </div>
+            </div>
+            <div id="meta" class="text-muted" style="font-size: 0.85rem; text-align: right;"></div>
+          </div>
+
+          <div id="chatBox" class="p-3" style="border: 1px solid rgba(0,0,0,0.12); border-radius: 12px; height: 380px; overflow-y: auto; background: rgba(0,0,0,0.02);">
+            <div class="d-flex" style="margin-bottom: 0.6rem;">
+              <div class="p-2" style="max-width: 85%; border-radius: 12px; background: #f8f9fa; border: 1px solid rgba(0,0,0,0.06);">
+                <div style="font-weight: 700; font-size: 0.85rem;" class="text-muted">Assistant</div>
+                <div style="white-space: pre-wrap;">Assistant is ready.</div>
+              </div>
+            </div>
+          </div>
+
+          <div id="typingRow" class="text-muted" style="font-size: 0.9rem; margin-top: 0.6rem; display: none;">
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            <span style="margin-left: 0.4rem;">Assistant is typing…</span>
+          </div>
+
+          <div class="row" style="margin-top: 0.75rem;">
+            <div class="col" style="min-width: 240px;">
+              <input id="msgInput" class="form-control" type="text" placeholder="Type your question…" autocomplete="off" />
+            </div>
+            <div class="col" style="max-width: 180px;">
+              <button id="sendBtn" class="btn btn-outline-success" style="width: 100%;">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-4" style="margin-bottom: 1rem;">
+        <div class="p-4 bg-white shadow rounded-lg" style="height: 100%;">
+          <div style="font-weight: 700; color: #05380b;">Assistant</div>
+          <div class="text-muted" style="font-size: 0.95rem; margin-bottom: 0.75rem;">GenAI-enabled when configured</div>
+
+          <div class="p-3" style="border-radius: 14px; border: 1px solid rgba(0,0,0,0.08); background: rgba(0,0,0,0.02);">
+            <!-- Simple, original SVG illustration (no external assets) -->
+            <svg viewBox="0 0 240 240" width="100%" height="240" role="img" aria-label="Chatbot" style="display:block;">
+              <defs>
+                <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#e9f7ec" />
+                  <stop offset="1" stop-color="#ffffff" />
+                </linearGradient>
+              </defs>
+              <rect x="20" y="30" width="200" height="180" rx="24" fill="url(#g)" stroke="rgba(0,0,0,0.12)" />
+              <rect x="60" y="70" width="120" height="86" rx="18" fill="#ffffff" stroke="rgba(0,0,0,0.10)" />
+              <circle cx="98" cy="112" r="10" fill="#05380b" opacity="0.9" />
+              <circle cx="142" cy="112" r="10" fill="#05380b" opacity="0.9" />
+              <rect x="92" y="138" width="56" height="8" rx="4" fill="#4ECC5A" opacity="0.85" />
+              <rect x="108" y="48" width="24" height="18" rx="9" fill="#ffffff" stroke="rgba(0,0,0,0.10)" />
+              <rect x="116" y="40" width="8" height="10" rx="4" fill="#05380b" opacity="0.9" />
+              <circle cx="120" cy="38" r="4" fill="#4ECC5A" />
+              <rect x="52" y="168" width="136" height="12" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.10)" />
+              <circle cx="70" cy="174" r="3" fill="#05380b" opacity="0.7" />
+              <circle cx="82" cy="174" r="3" fill="#05380b" opacity="0.7" />
+              <circle cx="94" cy="174" r="3" fill="#05380b" opacity="0.7" />
+            </svg>
+          </div>
+
+          <div class="text-muted" style="font-size: 0.9rem; margin-top: 0.75rem;">
+            {% if latest_label %}
+              Latest scan context is available.
+            {% else %}
+              Upload a scan first to get disease-specific guidance.
+            {% endif %}
+          </div>
+
+          <div style="margin-top: 0.75rem;">
+            <div class="text-muted" style="font-size: 0.9rem;">Tips</div>
+            <ul style="margin-bottom: 0;">
+              <li>Be specific about crop and stage.</li>
+              <li>Mention symptoms and weather if relevant.</li>
+              <li>Ask “How to treat this disease?” right after a scan.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  function appendMsg(role, text) {
+    const box = document.getElementById('chatBox');
+    const row = document.createElement('div');
+    row.className = 'd-flex';
+    row.style.marginBottom = '0.6rem';
+    row.style.justifyContent = (role === 'user') ? 'flex-end' : 'flex-start';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'p-2';
+    bubble.style.maxWidth = '85%';
+    bubble.style.borderRadius = '12px';
+    bubble.style.whiteSpace = 'pre-wrap';
+    bubble.style.border = '1px solid rgba(0,0,0,0.06)';
+    bubble.style.background = (role === 'user') ? '#e9f7ec' : '#f8f9fa';
+
+    const head = document.createElement('div');
+    head.className = 'text-muted';
+    head.style.fontSize = '0.85rem';
+    head.style.fontWeight = '700';
+    head.textContent = (role === 'user') ? 'You' : 'Assistant';
+
+    const msg = document.createElement('div');
+    msg.textContent = text;
+
+    bubble.appendChild(head);
+    bubble.appendChild(msg);
+    row.appendChild(bubble);
+    box.appendChild(row);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  async function send() {
+    const input = document.getElementById('msgInput');
+    const btn = document.getElementById('sendBtn');
+    const meta = document.getElementById('meta');
+    const typingRow = document.getElementById('typingRow');
+    const text = (input.value || '').trim();
+    if (!text) return;
+
+    appendMsg('user', text);
+    input.value = '';
+    btn.disabled = true;
+    if (typingRow) typingRow.style.display = 'block';
+    meta.textContent = '';
+
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text })
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        appendMsg('assistant', data.error || 'Request failed');
+        meta.textContent = '';
+        return;
+      }
+      appendMsg('assistant', data.answer || '');
+      meta.textContent = data.provider ? ('Provider: ' + data.provider) : '';
+    } catch (e) {
+      appendMsg('assistant', 'Chat service unavailable.');
+      meta.textContent = '';
+    } finally {
+      btn.disabled = false;
+      if (typingRow) typingRow.style.display = 'none';
+    }
+  }
+
+  document.getElementById('sendBtn').addEventListener('click', send);
+  document.getElementById('msgInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') send();
+  });
+</script>
+{% endblock body %}

@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+{% block pagetitle %}
+Dashboard
+{% endblock pagetitle %}
+
+{% block body %}
+<div>
+  <div class="container">
+    <div class="row mb-5 text-center text-white">
+      <div class="col-lg-10 mx-auto">
+        <h1 class="display-4" style="padding-top: 2%;font-weight: 400;color: rgb(4, 54, 4);"><b>📊 Dashboard</b></h1>
+        <p class="lead" style="font-weight: 500;color: black;">Disease history, timeline tracking, crop health trends, and location insights</p>
+      </div>
+    </div>
+
+    <div class="row" style="margin-bottom: 1rem;">
+      <div class="col mx-auto">
+        <div class="p-4 bg-white shadow rounded-lg">
+          <h5 style="margin-bottom: 0.75rem;"><b>📈 Crop health trends (last 30 days)</b></h5>
+          <div class="text-muted" style="margin-bottom: 0.75rem;">Healthy vs Diseased vs Uncertain counts per day</div>
+          <div class="row">
+            <div class="col" style="min-width: 260px;">
+              <canvas id="trendChart" height="110"></canvas>
+            </div>
+          </div>
+          <div class="table-responsive" style="margin-top: 1rem;">
+            <table class="table table-sm table-striped" style="margin-bottom: 0;">
+              <thead>
+                <tr>
+                  <th>Date (UTC)</th>
+                  <th>Healthy</th>
+                  <th>Diseased</th>
+                  <th>Uncertain</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for i in range(trend.labels|length) %}
+                {% if loop.index0 >= (trend.labels|length - 7) %}
+                <tr>
+                  <td>{{ trend.labels[i] }}</td>
+                  <td>{{ trend.healthy[i] }}</td>
+                  <td>{{ trend.diseased[i] }}</td>
+                  <td>{{ trend.uncertain[i] }}</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="text-muted" style="font-size: 0.9rem; margin-top: 0.75rem;">Showing last 7 days in table (chart shows all 30).</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-bottom: 1rem;">
+      <div class="col mx-auto" style="min-width: 320px;">
+        <div class="p-4 bg-white shadow rounded-lg" style="height: 100%;">
+          <h5 style="margin-bottom: 0.75rem;"><b>📍 Location-based insights</b></h5>
+          <div class="text-muted" style="margin-bottom: 0.75rem;">Top locations by number of scans</div>
+          {% if location_rows and location_rows|length > 0 %}
+          <div class="table-responsive">
+            <table class="table table-sm table-striped" style="margin-bottom: 0;">
+              <thead>
+                <tr>
+                  <th>Location</th>
+                  <th>Total</th>
+                  <th>Healthy</th>
+                  <th>Diseased</th>
+                  <th>Uncertain</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in location_rows %}
+                <tr>
+                  <td>{{ r.location }}</td>
+                  <td>{{ r.total }}</td>
+                  <td>{{ r.healthy }}</td>
+                  <td>{{ r.diseased }}</td>
+                  <td>{{ r.uncertain }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p style="margin-bottom: 0;">No scans yet.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="col mx-auto" style="min-width: 320px;">
+        <div class="p-4 bg-white shadow rounded-lg" style="height: 100%;">
+          <h5 style="margin-bottom: 0.75rem;"><b>📅 Timeline tracking</b></h5>
+          <div class="text-muted" style="margin-bottom: 0.75rem;">Most recent uploads in chronological order</div>
+          {% if timeline_items and timeline_items|length > 0 %}
+          <div class="list-group">
+            {% for s in timeline_items %}
+            <a class="list-group-item list-group-item-action" href="{{ s.report_url }}">
+              <div class="d-flex w-100 justify-content-between" style="gap: 1rem;">
+                <div>
+                  <b>{{ s.pred_label or 'Uncertain' }}</b>
+                  <div class="text-muted" style="font-size: 0.9rem;">
+                    {{ s.location_text }}
+                  </div>
+                </div>
+                <small class="text-muted">{{ s.created_at }}</small>
+              </div>
+            </a>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p style="margin-bottom: 0;">No scans yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col mx-auto">
+        <div class="p-4 bg-white shadow rounded-lg">
+          <h5 style="margin-bottom: 0.75rem;"><b>🗂️ Disease history (previous uploads)</b></h5>
+          <div class="text-muted" style="margin-bottom: 0.75rem;">Latest predictions with image, confidence, and report</div>
+
+          {% if recent_scans and recent_scans|length > 0 %}
+          <div class="table-responsive">
+            <table class="table table-striped" style="margin-bottom: 0;">
+              <thead>
+                <tr>
+                  <th>Time (UTC)</th>
+                  <th>Image</th>
+                  <th>Prediction</th>
+                  <th>Confidence</th>
+                  <th>Location</th>
+                  <th>Report</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for s in recent_scans %}
+                <tr>
+                  <td>{{ s.created_at }}</td>
+                  <td><img src="{{ s.image_url }}" width="70" height="70" style="object-fit: cover; border-radius: 8px;"></td>
+                  <td>{{ s.pred_label or 'Uncertain' }}</td>
+                  <td>
+                    {% if s.confidence is not none %}
+                      {{ '%.2f'|format(s.confidence * 100.0) }}%
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                  <td>{{ s.location_text }}</td>
+                  <td><a class="btn btn-sm btn-outline-success" href="{{ s.report_url }}">PDF</a></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p style="margin-bottom: 0;">No scans yet. Go to <a href="/index">AI Engine</a> and upload an image.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  (function renderTrend() {
+    const el = document.getElementById('trendChart');
+    if (!el) return;
+
+    const labels = {{ trend.labels|tojson }};
+    const healthy = {{ trend.healthy|tojson }};
+    const diseased = {{ trend.diseased|tojson }};
+    const uncertain = {{ trend.uncertain|tojson }};
+
+    new Chart(el, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Healthy', data: healthy, tension: 0.25 },
+          { label: 'Diseased', data: diseased, tension: 0.25 },
+          { label: 'Uncertain', data: uncertain, tension: 0.25 }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        scales: {
+          y: { beginAtZero: true, ticks: { precision: 0 } }
+        },
+        plugins: {
+          legend: { display: true }
+        }
+      }
+    });
+  })();
+</script>
+{% endblock body %}

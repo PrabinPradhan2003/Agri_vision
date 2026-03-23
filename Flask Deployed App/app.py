@@ -7,6 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import urlopen, Request
+from urllib.error import HTTPError, URLError
 
 from flask import Flask, redirect, render_template, request, url_for, jsonify, send_file
 from PIL import Image
@@ -15,13 +16,38 @@ from torchvision import transforms
 # Ensure repo root is importable (CNN.py depends on plant_labels.py at repo root)
 _THIS_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _THIS_DIR.parent
+
+# Optional: load environment variables from a local .env file (do NOT commit it)
+# We load the .env next to this app.py so it works no matter what your current working directory is.
+def _load_env_file(env_path: Path) -> None:
+    try:
+        if not env_path.exists() or not env_path.is_file():
+            return
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except Exception:
+        # Never fail app startup because of .env parsing
+        return
+
+
+_load_env_file(_THIS_DIR / ".env")
+
 if str(_THIS_DIR) not in sys.path:
     sys.path.insert(0, str(_THIS_DIR))
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import CNN
-from history_db import add_scan_return_id, get_scan, list_scans, set_feedback
+from history_db import add_scan_return_id, delete_scan, get_scan, list_scans, set_feedback
 import numpy as np
 import torch
 import torch.nn as nn
@@ -47,6 +73,11 @@ supplement_info = pd.read_csv(BASE_DIR / 'supplement_info.csv', encoding='cp1252
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 CONFIDENCE_THRESHOLD = float(os.getenv("PREDICTION_CONFIDENCE_THRESHOLD", "0.50"))
+
+# Optional GenAI integration (Hugging Face Inference API)
+HF_API_TOKEN = os.getenv("HF_API_TOKEN")
+HF_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+HF_TIMEOUT_SECONDS = float(os.getenv("HF_TIMEOUT_SECONDS", "20"))
 
 
 INFERENCE_TRANSFORM = transforms.Compose(
@@ -356,6 +387,206 @@ def _general_prevention_tips() -> List[str]:
         "Avoid overhead irrigation; water early so leaves dry faster",
         "Remove infected leaves/plant debris and keep tools clean",
     ]
+
+
+def _latest_scan_label() -> Optional[str]:
+    try:
+        scans = list_scans(HISTORY_DB_PATH, limit=1)
+        if not scans:
+            return None
+        return scans[0].pred_label
+    except Exception:
+        return None
+
+
+def _lookup_disease_steps_by_name(disease_name: str) -> Optional[str]:
+    """Return the 'Possible Steps' text for a disease name (case-insensitive), if found."""
+    if not disease_name:
+        return None
+    try:
+        name_col = _df_col(disease_info, "disease_name", "disease name") or "disease_name"
+        steps_col = _df_col(disease_info, "Possible Steps", "possible steps", "steps") or "Possible Steps"
+        needle = str(disease_name).strip().lower()
+        if not needle:
+            return None
+        for _, row in disease_info.iterrows():
+            cand = str(row.get(name_col, "") or "").strip()
+            if cand.lower() == needle:
+                steps = str(row.get(steps_col, "") or "").strip()
+                return steps or None
+    except Exception:
+        return None
+    return None
+
+
+def _rule_based_chat_answer(message: str) -> Tuple[str, bool]:
+    """Return (answer, handled).
+
+    handled=True means we produced a meaningful answer (not just a help prompt).
+    """
+
+    text = (message or "").strip()
+    text_l = text.lower()
+    latest = _latest_scan_label() or ""
+
+    treat_intent = any(k in text_l for k in ["treat", "treatment", "how to treat", "cure", "manage"])
+    if treat_intent and ("disease" in text_l or "infection" in text_l or latest or "this" in text_l or "the" in text_l):
+        disease_name = latest if ("this disease" in text_l or "the disease" in text_l) else ""
+
+        # If they mention a disease explicitly, try to extract it by matching known names.
+        try:
+            name_col = _df_col(disease_info, "disease_name", "disease name") or "disease_name"
+            for dn in disease_info[name_col].astype(str).tolist():
+                if dn and dn.lower() in text_l:
+                    disease_name = dn
+                    break
+        except Exception:
+            pass
+
+        if disease_name:
+            steps = _lookup_disease_steps_by_name(disease_name)
+            if steps:
+                points = _split_points(steps, max_items=8)
+                body = "\n".join([f"- {p}" for p in points]) if points else steps
+                return (
+                    f"For **{disease_name}**, here are general management steps:\n{body}\n\n"
+                    "If symptoms keep spreading, consider consulting a local agronomist for diagnosis confirmation.",
+                    True,
+                )
+
+        # Generic but still actionable advice.
+        tips = [
+            "Remove and discard infected leaves (don’t compost if it’s spreading).",
+            "Avoid overhead watering; keep leaves dry (water early morning at the soil).",
+            "Improve airflow: spacing + pruning; avoid dense canopy.",
+            "Sanitize tools and hands between plants to prevent spread.",
+            "Use balanced nutrition; avoid excess nitrogen during active disease.",
+            "If disease is severe or spreading fast, consult local guidance for approved treatments in your area.",
+        ]
+        body = "\n".join([f"- {t}" for t in tips])
+        followup = "\n\nTell me the crop + a photo/scan result (or the disease name) and I’ll suggest more specific steps."
+        if latest:
+            followup = f"\n\nI can see your latest scan prediction is **{latest}** — ask “How to treat this disease?” after scanning for disease-specific steps."
+        return ("Here are safe, general steps to manage plant diseases:\n" + body + followup, True)
+
+    if "fertilizer" in text_l and "rice" in text_l:
+        return (
+            "For rice, fertilizer choice depends on soil test + growth stage. General guidance:\n"
+            "- Basal: balanced NPK (often N and P emphasized early)\n"
+            "- Tillering: nitrogen split doses\n"
+            "- Panicle initiation: balanced N + K support\n"
+            "- Avoid over-nitrogen (can increase disease/pest pressure)\n\n"
+            "If you tell me your stage (seedling/tillering/flowering) and soil type, I can narrow it down.",
+            True,
+        )
+
+    if any(k in text_l for k in ["when should i water", "when to water", "watering", "irrigation"]):
+        return (
+            "Watering timing depends on crop + weather + soil. Safe general tips:\n"
+            "- Water early morning (reduces evaporation and leaf wetness overnight)\n"
+            "- Prefer deep, less frequent watering over frequent light watering\n"
+            "- Avoid wetting leaves late evening (can increase fungal risk)\n"
+            "- Use soil moisture cues: top 2–3 cm dry for many crops\n\n"
+            "Tell me the crop and whether it’s in pots or field, and I’ll suggest a schedule.",
+            True,
+        )
+
+    return (
+        "Ask me things like:\n"
+        "- How to treat this disease?\n"
+        "- Best fertilizer for rice?\n"
+        "- When should I water?\n\n"
+        "If you’ve already scanned a leaf, I can use the latest prediction as context.",
+        False,
+    )
+
+
+def _hf_generate_text(prompt: str) -> Optional[Tuple[str, str]]:
+    """Return (answer_text, model_used) or None.
+
+    Uses Hugging Face Inference Providers via the OpenAI-compatible endpoint.
+    Falls back to a known-working hf-inference model if the configured provider is blocked.
+    """
+
+    if not HF_API_TOKEN:
+        return None
+
+    url = "https://router.huggingface.co/v1/chat/completions"
+    fallback_model = "katanemo/Arch-Router-1.5B:hf-inference"
+
+    models_to_try: List[str] = []
+    if HF_MODEL:
+        models_to_try.append(HF_MODEL)
+    if fallback_model not in models_to_try:
+        models_to_try.append(fallback_model)
+
+    def _try_model(model_id: str) -> Tuple[Optional[str], Optional[int], str]:
+        payload = {
+            "model": model_id,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "temperature": 0.3,
+            "max_tokens": 256,
+        }
+        req = Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {HF_API_TOKEN}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "Plant-Disease-Detection/1.0",
+            },
+            method="POST",
+        )
+
+        try:
+            with urlopen(req, timeout=HF_TIMEOUT_SECONDS) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+        except HTTPError as e:
+            try:
+                err_raw = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                err_raw = ""
+            return None, int(getattr(e, "code", 0) or 0), err_raw
+        except (URLError, TimeoutError):
+            return None, None, ""
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return None, None, raw
+
+        # OpenAI-compatible response: {"choices": [{"message": {"content": "..."}}], ...}
+        if isinstance(data, dict):
+            if "error" in data:
+                return None, 400, json.dumps(data, ensure_ascii=False)
+            choices = data.get("choices")
+            if isinstance(choices, list) and choices:
+                first = choices[0]
+                if isinstance(first, dict):
+                    msg = first.get("message")
+                    if isinstance(msg, dict) and "content" in msg:
+                        out = str(msg.get("content") or "").strip()
+                        return out or None, None, ""
+                    if "text" in first:
+                        out = str(first.get("text") or "").strip()
+                        return out or None, None, ""
+        return None, None, raw
+
+    for model_id in models_to_try:
+        out, code, err_raw = _try_model(model_id)
+        if out:
+            return out, model_id
+
+        # Retry logic for common failure modes
+        err_l = (err_raw or "").lower()
+        if code == 400 and "model_not_supported" in err_l:
+            continue
+        if code == 403 and ("cloudflare" in err_l or "error 1010" in err_l or "access denied" in err_l):
+            continue
+
+    return None
 
 
 def _smart_treatment_tips(disease_title: str, realtime: Optional[Dict[str, Any]]) -> List[str]:
@@ -682,6 +913,159 @@ def history_page():
     return render_template('history.html', scans=scan_dicts)
 
 
+@app.get('/assistant')
+def assistant_page():
+    latest = _latest_scan_label()
+    return render_template('assistant.html', latest_label=latest)
+
+
+@app.post('/api/chat')
+def api_chat():
+    try:
+        payload = request.get_json(silent=True) or {}
+    except Exception:
+        payload = {}
+
+    message = (payload.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+
+    latest = _latest_scan_label()
+    latest_context = f"Latest scan prediction: {latest}." if latest else "No prior scan available."
+
+    # Always produce a safe baseline via rules.
+    rb_answer, rb_handled = _rule_based_chat_answer(message)
+
+    answer = rb_answer
+    provider = "rules"
+
+    # If HF is configured, prefer it for a more "chatbot" feel, but keep the rules answer as fallback.
+    if HF_API_TOKEN:
+        prompt = (
+            "You are an agriculture assistant for plant disease detection. "
+            "Give practical, safe, general advice. Avoid chemical dosage instructions and avoid medical claims. "
+            "Keep answers concise and actionable; use bullet points when helpful.\n\n"
+            f"Context: {latest_context}\n\n"
+            f"User question: {message}\n\n"
+            "If the question is vague, ask 1 short clarifying question at the end, but still give general guidance first.\n"
+        )
+
+        # If rules already handled it, ask the model to refine without changing safety.
+        if rb_handled:
+            prompt += (
+                "\nBaseline safe answer (do not contradict, only improve clarity):\n"
+                f"{rb_answer}\n\n"
+                "Improved answer:"
+            )
+        else:
+            prompt += "\nAnswer:"
+
+        gen = _hf_generate_text(prompt)
+        if gen:
+            answer, model_used = gen
+            provider = f"hf:{model_used}"
+
+    return jsonify({"answer": answer, "provider": provider, "latest_label": latest})
+
+
+@app.route('/dashboard')
+def dashboard_page():
+    """Dashboard summarizing scan history, trends, timeline, and locations."""
+
+    from collections import defaultdict
+    from datetime import datetime, timezone, timedelta
+
+    scans = list_scans(HISTORY_DB_PATH, limit=750)
+
+    def _parse_created_at(value: str) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            # Stored as ISO string like 2026-03-23T12:34:56.123456Z
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+        except Exception:
+            return None
+
+    def _health_bucket(pred_label: Optional[str], pred_idx: Optional[int]) -> str:
+        if pred_label is None or pred_idx is None:
+            return "Uncertain"
+        if "healthy" in str(pred_label).lower():
+            return "Healthy"
+        return "Diseased"
+
+    # Recent scan cards/table
+    recent_scans: List[Dict[str, Any]] = []
+    for s in scans[:25]:
+        recent_scans.append(
+            {
+                "id": s.id,
+                "created_at": s.created_at,
+                "pred_label": s.pred_label,
+                "confidence": s.confidence,
+                "severity_percent": s.severity_percent,
+                "severity_level": s.severity_level,
+                "location_text": (s.location_text or "Unknown"),
+                "image_url": url_for('static', filename=f'uploads/{s.image_filename}'),
+                "report_url": url_for('download_report', scan_id=s.id),
+            }
+        )
+
+    # Timeline (most recent first)
+    timeline_items = recent_scans
+
+    # Trends over last N days
+    now_utc = datetime.now(timezone.utc)
+    days_back = 30
+    start_day = (now_utc - timedelta(days=days_back - 1)).date()
+    day_labels = [(start_day + timedelta(days=i)).isoformat() for i in range(days_back)]
+
+    daily = {d: {"Healthy": 0, "Diseased": 0, "Uncertain": 0} for d in day_labels}
+    for s in scans:
+        dt = _parse_created_at(s.created_at)
+        if dt is None:
+            continue
+        day = dt.date().isoformat()
+        if day not in daily:
+            continue
+        bucket = _health_bucket(s.pred_label, s.pred_idx)
+        daily[day][bucket] += 1
+
+    trend = {
+        "labels": day_labels,
+        "healthy": [daily[d]["Healthy"] for d in day_labels],
+        "diseased": [daily[d]["Diseased"] for d in day_labels],
+        "uncertain": [daily[d]["Uncertain"] for d in day_labels],
+    }
+
+    # Location insights (top locations by total scans)
+    loc_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: {"Healthy": 0, "Diseased": 0, "Uncertain": 0, "Total": 0})
+    for s in scans:
+        loc = (s.location_text or "Unknown").strip() or "Unknown"
+        bucket = _health_bucket(s.pred_label, s.pred_idx)
+        loc_counts[loc][bucket] += 1
+        loc_counts[loc]["Total"] += 1
+
+    top_locations = sorted(loc_counts.items(), key=lambda kv: (-kv[1]["Total"], kv[0]))[:8]
+    location_rows = [
+        {
+            "location": name,
+            "total": stats["Total"],
+            "healthy": stats["Healthy"],
+            "diseased": stats["Diseased"],
+            "uncertain": stats["Uncertain"],
+        }
+        for name, stats in top_locations
+    ]
+
+    return render_template(
+        'dashboard.html',
+        recent_scans=recent_scans,
+        timeline_items=timeline_items,
+        trend=trend,
+        location_rows=location_rows,
+    )
+
+
 @app.post('/feedback')
 def feedback_submit():
     scan_id = request.form.get('scan_id')
@@ -696,6 +1080,51 @@ def feedback_submit():
     is_correct = str(correct).lower() in {"1", "true", "yes"}
     try:
         set_feedback(HISTORY_DB_PATH, scan_id=sid, correct=is_correct, correct_label=(None if is_correct else label))
+    except Exception:
+        pass
+
+    return redirect(url_for('history_page'))
+
+
+@app.post('/history/delete')
+def history_delete_scan():
+    scan_id = request.form.get('scan_id')
+    try:
+        sid = int(scan_id)
+    except Exception:
+        return redirect(url_for('history_page'))
+
+    # Fetch row first so we can delete the corresponding files.
+    scan = None
+    try:
+        scan = get_scan(HISTORY_DB_PATH, sid)
+    except Exception:
+        scan = None
+
+    # Best-effort DB delete
+    try:
+        delete_scan(HISTORY_DB_PATH, sid)
+    except Exception:
+        pass
+
+    # Best-effort file cleanup (uploaded image + CAM overlays)
+    try:
+        if scan is not None and scan.image_filename:
+            img_path = UPLOAD_DIR / str(scan.image_filename)
+            try:
+                if img_path.exists():
+                    img_path.unlink()
+            except Exception:
+                pass
+
+            stem = Path(str(scan.image_filename)).stem
+            if stem:
+                prefix = f"cam_{stem}_"
+                for p in UPLOAD_DIR.glob(f"{prefix}*.jpg"):
+                    try:
+                        p.unlink()
+                    except Exception:
+                        pass
     except Exception:
         pass
 
@@ -939,11 +1368,22 @@ def submit():
             lat = _parse_float(request.form.get("lat"))
             lon = _parse_float(request.form.get("lon"))
             realtime = None
+            place = None
             if lat is not None and lon is not None:
                 realtime = _fetch_realtime_weather(lat, lon)
                 place = _reverse_geocode_place_cached(lat, lon)
                 if realtime is not None and place is not None:
                     realtime.update(place)
+
+            manual_location_text = (request.form.get("location_text") or "").strip() or None
+            inferred_location_text = None
+            try:
+                if place is not None:
+                    inferred_location_text = (place.get("place") or "").strip() or None
+            except Exception:
+                inferred_location_text = None
+
+            location_text = manual_location_text or inferred_location_text
 
             pred, top_idxs, top_probs, input_tensor = _predict_topk(pil_image, k=3)
             disease_name_col = _df_col(disease_info, "disease_name", "disease name") or "disease_name"
@@ -1085,6 +1525,7 @@ def submit():
                 severity_level=severity_level,
                 model_name=str(model_meta.get("model")),
                 model_weights=str(_model_path or ""),
+                location_text=location_text,
             )
         except Exception:
             pass

@@ -28,6 +28,7 @@ History
                   <th>Severity</th>
                   <th>Feedback</th>
                   <th>Report</th>
+                  <th>Delete</th>
                 </tr>
               </thead>
               <tbody>
@@ -77,6 +78,12 @@ History
                   </td>
                   <td>
                     <a class="btn btn-sm btn-outline-success" href="{{ s.report_url }}">PDF</a>
+                  </td>
+                  <td>
+                    <form action="{{ url_for('history_delete_scan') }}" method="POST" style="display:inline-block;">
+                      <input type="hidden" name="scan_id" value="{{ s.id }}" />
+                      <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
                   </td>
                 </tr>
                 {% endfor %}

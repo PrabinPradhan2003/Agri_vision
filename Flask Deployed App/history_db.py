@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS scans (
     severity_level TEXT,
     model_name TEXT,
     model_weights TEXT,
+        location_text TEXT,
     feedback_correct INTEGER,
     feedback_label TEXT
 );
@@ -44,6 +45,7 @@ class ScanRow:
     severity_level: Optional[str]
     model_name: Optional[str]
     model_weights: Optional[str]
+    location_text: Optional[str]
     feedback_correct: Optional[bool]
     feedback_label: Optional[str]
 
@@ -71,6 +73,7 @@ def init_db(db_path: Path) -> None:
         _add_col("severity_level", "TEXT")
         _add_col("model_name", "TEXT")
         _add_col("model_weights", "TEXT")
+        _add_col("location_text", "TEXT")
         _add_col("feedback_correct", "INTEGER")
         _add_col("feedback_label", "TEXT")
         conn.commit()
@@ -89,6 +92,7 @@ def add_scan(
     severity_level: Optional[str] = None,
     model_name: Optional[str] = None,
     model_weights: Optional[str] = None,
+    location_text: Optional[str] = None,
 ) -> None:
     init_db(db_path)
     created_at = datetime.utcnow().isoformat() + "Z"
@@ -100,9 +104,10 @@ def add_scan(
               created_at, image_filename, pred_idx, pred_label, confidence,
               top_predictions_json, weather_json,
               severity_percent, severity_level,
-              model_name, model_weights
+                            model_name, model_weights,
+                            location_text
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_at,
@@ -116,6 +121,7 @@ def add_scan(
                 severity_level,
                 model_name,
                 model_weights,
+                                location_text,
             ),
         )
         conn.commit()
@@ -134,6 +140,7 @@ def add_scan_return_id(
     severity_level: Optional[str] = None,
     model_name: Optional[str] = None,
     model_weights: Optional[str] = None,
+    location_text: Optional[str] = None,
 ) -> int:
     """Insert a scan and return its row id."""
     init_db(db_path)
@@ -145,9 +152,10 @@ def add_scan_return_id(
               created_at, image_filename, pred_idx, pred_label, confidence,
               top_predictions_json, weather_json,
               severity_percent, severity_level,
-              model_name, model_weights
+                            model_name, model_weights,
+                            location_text
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_at,
@@ -161,6 +169,7 @@ def add_scan_return_id(
                 severity_level,
                 model_name,
                 model_weights,
+                                location_text,
             ),
         )
         conn.commit()
@@ -189,6 +198,7 @@ def get_scan(db_path: Path, scan_id: int) -> Optional[ScanRow]:
         severity_level=(str(r["severity_level"]) if r["severity_level"] is not None else None),
         model_name=(str(r["model_name"]) if r["model_name"] is not None else None),
         model_weights=(str(r["model_weights"]) if r["model_weights"] is not None else None),
+        location_text=(str(r["location_text"]) if r["location_text"] is not None else None),
         feedback_correct=(bool(int(r["feedback_correct"])) if r["feedback_correct"] is not None else None),
         feedback_label=(str(r["feedback_label"]) if r["feedback_label"] is not None else None),
     )
@@ -236,9 +246,19 @@ def list_scans(db_path: Path, limit: int = 25) -> List[ScanRow]:
                 severity_level=(str(r["severity_level"]) if r["severity_level"] is not None else None),
                 model_name=(str(r["model_name"]) if r["model_name"] is not None else None),
                 model_weights=(str(r["model_weights"]) if r["model_weights"] is not None else None),
+                location_text=(str(r["location_text"]) if r["location_text"] is not None else None),
                 feedback_correct=(bool(int(r["feedback_correct"])) if r["feedback_correct"] is not None else None),
                 feedback_label=(str(r["feedback_label"]) if r["feedback_label"] is not None else None),
             )
         )
 
     return out
+
+
+def delete_scan(db_path: Path, scan_id: int) -> bool:
+    """Delete a scan by id. Returns True if a row was deleted."""
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        cur = conn.execute("DELETE FROM scans WHERE id = ?", (int(scan_id),))
+        conn.commit()
+        return int(cur.rowcount or 0) > 0

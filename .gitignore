@@ -15,6 +15,10 @@ __pycache__/
 venv/
 ENV/
 
+# Local secrets
+.env
+Flask Deployed App/.env
+
 # OS / Editor
 .DS_Store
 Thumbs.db
