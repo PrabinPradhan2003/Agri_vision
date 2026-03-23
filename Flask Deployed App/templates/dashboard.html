@@ -164,16 +164,20 @@ Dashboard
   </div>
 </div>
 
+<script id="trend-data" type="application/json">{{ trend|tojson }}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
   (function renderTrend() {
     const el = document.getElementById('trendChart');
     if (!el) return;
 
-    const labels = {{ trend.labels|tojson }};
-    const healthy = {{ trend.healthy|tojson }};
-    const diseased = {{ trend.diseased|tojson }};
-    const uncertain = {{ trend.uncertain|tojson }};
+    const dataEl = document.getElementById('trend-data');
+    const trend = dataEl ? JSON.parse(dataEl.textContent || '{}') : {};
+
+    const labels = trend.labels || [];
+    const healthy = trend.healthy || [];
+    const diseased = trend.diseased || [];
+    const uncertain = trend.uncertain || [];
 
     new Chart(el, {
       type: 'line',
